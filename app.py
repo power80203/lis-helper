@@ -2,12 +2,23 @@ import os
 import threading
 import time
 import requests
+import logging
 from datetime import datetime, timedelta
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from dotenv import load_dotenv
+
+# 設定 logging - 只輸出到控制台，不要檔案
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()  # 只輸出到控制台
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # 載入 .env 檔案
 load_dotenv()
@@ -38,11 +49,11 @@ def keep_alive():
     """每14分鐘 ping 自己以保持服務活躍"""
     try:
         app_url = os.getenv('RENDER_EXTERNAL_URL', 'http://127.0.0.1:9527')
-        print(app_url)
+        logger.info(f"Keep-alive URL: {app_url}")
         response = requests.get(f"{app_url}/health", timeout=10)
-        print(f"✅ Keep-alive ping sent: {response.status_code}")
+        logger.info(f"✅ Keep-alive ping sent: {response.status_code}")
     except Exception as e:
-        print(f"❌ Keep-alive ping failed: {e}")
+        logger.error(f"❌ Keep-alive ping failed: {e}")
 
 def keep_alive_worker():
     """背景執行緒：保持服務活躍"""
@@ -51,7 +62,7 @@ def keep_alive_worker():
             keep_alive()
             time.sleep(keep_alive_minute * 60)  # 每14分鐘執行一次
         except Exception as e:
-            print(f"Keep-alive worker error: {e}")
+            logger.error(f"Keep-alive worker error: {e}")
             time.sleep(1 * 60)
 
 def _msg_worker():
@@ -77,14 +88,14 @@ def _msg_worker():
                 message = f"🌞 中午好！現在是{now.strftime('%Y年%m月%d日 %H:%M')} 該執行任務喔！"
                 send_startup_broadcast(message)
                 sent_today["12:30"] = True
-                print(f"✅ 中午提醒已發送：{current_time}")
+                logger.info(f"✅ 中午提醒已發送：{current_time}")
             
             # 晚上9點半發送
             elif current_time == "21:30" and not sent_today["21:30"]:
                 message = f"🌙 晚上好！現在是{now.strftime('%Y年%m月%d日 %H:%M')} 該執行任務喔！"
                 send_startup_broadcast(message)
                 sent_today["21:30"] = True
-                print(f"✅ 晚上提醒已發送：{current_time}")
+                logger.info(f"✅ 晚上提醒已發送：{current_time}")
             
             # 每120秒檢查一次時間
             time.sleep(60)  # 每60秒檢查一次
@@ -92,13 +103,13 @@ def _msg_worker():
             if current_time.endswith(":00"):
                 # 只在整點時打印
                 current_time = now.strftime("%H:%M:%S")
-                print(f"檢查時間：{current_time} 檢查完畢")  # 整點打印一次檢查時間
+                logger.debug(f"檢查時間：{current_time} 檢查完畢")  # 整點打印一次檢查時間
             
             
         except Exception as e:
-            print(f"Message worker error: {e}")
+            logger.error(f"Message worker error: {e}")
             # 如果發生錯誤，等待1分鐘再重試
-            print("等待1分鐘後重試...")
+            logger.info("等待1分鐘後重試...")
             time.sleep(60)
 
 def send_startup_broadcast(msg="🎉 恭喜！機器人已成功啟動！"):
@@ -107,7 +118,7 @@ def send_startup_broadcast(msg="🎉 恭喜！機器人已成功啟動！"):
     all_users = set(BROADCAST_USERS) | collected_user_ids
     
     if not all_users:
-        print("⚠️ 沒有用戶ID可以發送訊息")
+        logger.warning("⚠️ 沒有用戶ID可以發送訊息")
         return
     
     message = msg
@@ -122,12 +133,12 @@ def send_startup_broadcast(msg="🎉 恭喜！機器人已成功啟動！"):
                     TextSendMessage(text=message)
                 )
                 success_count += 1
-                print(f"✅ 已發送給: {user_id}")
+                logger.info(f"✅ 已發送給: {user_id}")
             except Exception as e:
                 fail_count += 1
-                print(f"❌ 發送失敗 {user_id}: {e}")
+                logger.error(f"❌ 發送失敗 {user_id}: {e}")
     
-    print(f"🚀 啟動群發完成：成功 {success_count} 人，失敗 {fail_count} 人")
+    logger.info(f"🚀 啟動群發完成：成功 {success_count} 人，失敗 {fail_count} 人")
 
 @app.route('/health')
 def health():
@@ -167,7 +178,7 @@ def handle_text_message(event):
     
     # 自動收集用戶ID
     collected_user_ids.add(user_id)
-    print(f"收集到用戶ID: {user_id}")
+    logger.info(f"收集到用戶ID: {user_id}")
     
     # 如果用戶發送"我的ID"，就回傳用戶ID
     if text == "我的ID":
@@ -229,7 +240,7 @@ def handle_text_message(event):
                             )
                             success_count += 1
                         except Exception as e:
-                            print(f"群發失敗 {target_user_id}: {e}")
+                            logger.error(f"群發失敗 {target_user_id}: {e}")
                             fail_count += 1
                 
                 response = f"📢 群發完成！\n✅ 成功：{success_count} 人\n❌ 失敗：{fail_count} 人"
@@ -268,14 +279,14 @@ if __name__ == "__main__":
         keep_alive_thread.start()
         msg_thread = threading.Thread(target=_msg_worker, daemon=True)
         msg_thread.start()
-        print("✅ Keep-Alive 功能已啟動")
+        logger.info("✅ Keep-Alive 功能已啟動")
         # 群發啟動訊息
         # send_startup_broadcast()
-        print("🚀 服務器準備就緒！")
-        print("💡 自動保活功能運行中，每14分鐘 ping 一次")
+        logger.info("🚀 服務器準備就緒！")
+        logger.info("💡 自動保活功能運行中，每14分鐘 ping 一次")
         # 啟動 Flask 應用
         app.run(host='0.0.0.0', port=9527, debug=False)
     except Exception as e:
-        print(f"❌ 應用啟動失敗: {e}")
+        logger.error(f"❌ 應用啟動失敗: {e}")
         error_cnt += 1
         time.sleep(60)
