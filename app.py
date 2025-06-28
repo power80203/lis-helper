@@ -274,7 +274,7 @@ if __name__ == "__main__":
         print("🚀 服務器準備就緒！")
         print("💡 自動保活功能運行中，每14分鐘 ping 一次")
         # 啟動 Flask 應用
-        app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+        app.run(host='0.0.0.0', port=9527, debug=False)
     except Exception as e:
         print(f"❌ 應用啟動失敗: {e}")
         error_cnt += 1
